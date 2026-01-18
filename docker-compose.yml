@@ -129,10 +129,12 @@ services:
     container_name: delivery_dashboard
     environment:
       ANALYTICS_URL: "http://analytics:8004"
+      INTERNAL_TOKEN: "9f1c8d3a2b1a4e4b9b7f0d7d7d88d2aa"
     ports:
       - "13001:3000"
     depends_on:
       - analytics
+
 
 
 volumes:

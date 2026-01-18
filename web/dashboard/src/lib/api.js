@@ -1,4 +1,4 @@
-const BASE = "/api";
+const BASE = "/api/proxy";
 
 export async function apiGet(path) {
     const res = await fetch(`${BASE}${path}`, {
