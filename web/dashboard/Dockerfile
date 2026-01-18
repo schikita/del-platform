@@ -23,8 +23,6 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/.next ./.next
 
-RUN mkdir -p ./public
-RUN if [ -d /app/public ]; then cp -a /app/public/. ./public/; fi
-
+# public не копируем: папка необязательна, а если нужна — добавь её в репозиторий
 EXPOSE 3000
 CMD ["npm", "run", "start"]
