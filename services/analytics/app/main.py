@@ -144,7 +144,8 @@ routes = [
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://185.244.50.22:13001"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
