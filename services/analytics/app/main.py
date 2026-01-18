@@ -152,14 +152,20 @@ async def on_startup():
 async def on_shutdown():
     await db.close()
 
+async def options_ok(request):
+    return JSONResponse({}, status_code=204)
+
+
 
 routes = [
+    Route("/{path:path}", options_ok, methods=["OPTIONS"]),
     Route("/health", health, methods=["GET"]),
     Route("/kpi", kpi, methods=["GET"]),
     Route("/orders/recent", orders_recent, methods=["GET"]),
     Route("/couriers/load", couriers_load, methods=["GET"]),
     Route("/timeseries/orders", timeseries_orders, methods=["GET"]),
 ]
+
 
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
 app.add_middleware(
