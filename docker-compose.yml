@@ -27,7 +27,8 @@ services:
       PORT: 8001
       DATABASE_URL: postgres://delivery_user:delivery_pass@postgres:5432/delivery_db
       REDIS_URL: redis://redis:6379/0
-      INTERNAL_TOKEN: super_secret_token
+      INTERNAL_TOKEN: 9f1c8d3a2b1a4e4b9b7f0d7d7d88d2aa
+
     ports:
       - "8001:8001"
     depends_on:
