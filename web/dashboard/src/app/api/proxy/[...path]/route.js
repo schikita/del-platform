@@ -1,8 +1,22 @@
+export const dynamic = "force-dynamic";
+
 export async function GET(req, ctx) {
     return proxy(req, ctx);
 }
 
 export async function POST(req, ctx) {
+    return proxy(req, ctx);
+}
+
+export async function PUT(req, ctx) {
+    return proxy(req, ctx);
+}
+
+export async function PATCH(req, ctx) {
+    return proxy(req, ctx);
+}
+
+export async function DELETE(req, ctx) {
     return proxy(req, ctx);
 }
 
@@ -12,6 +26,7 @@ async function proxy(req, ctx) {
 
     const path = (ctx.params.path || []).join("/");
     const url = new URL(req.url);
+
     const target = `${analyticsBase}/${path}${url.search}`;
 
     const headers = new Headers(req.headers);
@@ -30,8 +45,11 @@ async function proxy(req, ctx) {
 
     const upstream = await fetch(target, init);
 
+    const respHeaders = new Headers(upstream.headers);
+    respHeaders.delete("content-encoding"); // иногда полезно, чтобы не словить проблемы с проксированием сжатия
+
     return new Response(upstream.body, {
         status: upstream.status,
-        headers: upstream.headers,
+        headers: respHeaders,
     });
 }
