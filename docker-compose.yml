@@ -125,6 +125,7 @@ services:
   dashboard:
     build:
       context: ./web/dashboard
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_ANALYTICS_URL: "http://185.244.50.22:8004"
     container_name: delivery_dashboard
