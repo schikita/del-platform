@@ -1,9 +1,9 @@
-import time
 from datetime import datetime, timedelta
+
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from starlette.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import Database
@@ -12,10 +12,30 @@ from app.db import Database
 settings = get_settings()
 db = Database(settings["database_url"])
 
+DASHBOARD_ORIGINS = {
+    "http://185.244.50.22:13001",
+    "http://localhost:13001",
+}
+
+
+def _is_dashboard_origin(request):
+    origin = request.headers.get("Origin")
+    return origin in DASHBOARD_ORIGINS
+
+
+def _is_internal_auth(request):
+    token = request.headers.get("X-Internal-Token", "")
+    return bool(token) and token == settings["internal_token"]
+
 
 def _auth_ok(request):
-    token = request.headers.get("X-Internal-Token", "")
-    return token and token == settings["internal_token"]
+    # Для демо: UI читает аналитику без internal-token, но только с разрешённого Origin.
+    # Внутренние сервисы продолжают ходить по X-Internal-Token.
+    if _is_internal_auth(request):
+        return True
+    if _is_dashboard_origin(request):
+        return True
+    return False
 
 
 async def health(request):
@@ -144,10 +164,7 @@ routes = [
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://185.244.50.22:13001",
-        "http://localhost:13001",
-    ],
+    allow_origins=list(DASHBOARD_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
