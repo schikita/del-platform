@@ -111,7 +111,7 @@ services:
     image: grafana/grafana:latest
     container_name: delivery_grafana
     ports:
-    - "13000:3000"
+      - "13000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -128,7 +128,7 @@ services:
     environment:
       NEXT_PUBLIC_ANALYTICS_URL: http://analytics:8004
     ports:
-    - "13001:3000"
+      - "13001:3000"
     depends_on:
       - analytics
 
