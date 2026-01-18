@@ -123,10 +123,13 @@ services:
       - prometheus
 
   dashboard:
-    build: ./web/dashboard
+    build:
+      context: ./web/dashboard
+      args:
+        NEXT_PUBLIC_ANALYTICS_URL: "http://185.244.50.22:8004"
     container_name: delivery_dashboard
     environment:
-      NEXT_PUBLIC_ANALYTICS_URL: http://185.244.50.22:8004
+      NEXT_PUBLIC_ANALYTICS_URL: "http://185.244.50.22:8004"
     ports:
       - "13001:3000"
     depends_on:
