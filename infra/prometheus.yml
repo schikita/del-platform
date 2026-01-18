@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 3s
+
+scrape_configs:
+  - job_name: "orders"
+    static_configs:
+      - targets: ["orders:8001"]
+
+  - job_name: "couriers"
+    static_configs:
+      - targets: ["couriers:8002"]
+
+  - job_name: "dispatcher"
+    static_configs:
+      - targets: ["dispatcher:8003"]

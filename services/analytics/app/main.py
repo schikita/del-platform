@@ -1,0 +1,156 @@
+import time
+from datetime import datetime, timedelta
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.db import Database
+
+
+settings = get_settings()
+db = Database(settings["database_url"])
+
+
+def _auth_ok(request):
+    token = request.headers.get("X-Internal-Token", "")
+    return token and token == settings["internal_token"]
+
+
+async def health(request):
+    return JSONResponse({"status": "ok", "service": settings["app_name"]})
+
+
+async def kpi(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    row_total = await db.fetchrow("SELECT COUNT(*) AS c FROM orders")
+    row_new = await db.fetchrow("SELECT COUNT(*) AS c FROM orders WHERE status = 'NEW'")
+    row_assigned = await db.fetchrow("SELECT COUNT(*) AS c FROM orders WHERE status = 'ASSIGNED'")
+    row_couriers = await db.fetchrow("SELECT COUNT(*) AS c FROM couriers WHERE is_active = TRUE")
+
+    return JSONResponse(
+        {
+            "total_orders": int(row_total["c"]),
+            "new_orders": int(row_new["c"]),
+            "assigned_orders": int(row_assigned["c"]),
+            "active_couriers": int(row_couriers["c"]),
+        }
+    )
+
+
+async def orders_recent(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    rows = await db.fetch(
+        """
+        SELECT id::text, customer_name, address, phone, status,
+               COALESCE(assigned_courier_id::text, '') AS assigned_courier_id,
+               created_at
+        FROM orders
+        ORDER BY created_at DESC
+        LIMIT 50
+        """
+    )
+
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r["id"],
+                "customer_name": r["customer_name"],
+                "address": r["address"],
+                "phone": r["phone"],
+                "status": r["status"],
+                "assigned_courier_id": r["assigned_courier_id"] or None,
+                "created_at": r["created_at"].isoformat(),
+            }
+        )
+
+    return JSONResponse({"orders": items})
+
+
+async def couriers_load(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    rows = await db.fetch(
+        """
+        SELECT id::text, name, current_load, is_active
+        FROM couriers
+        ORDER BY current_load DESC, name ASC
+        LIMIT 50
+        """
+    )
+
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "current_load": int(r["current_load"]),
+                "is_active": bool(r["is_active"]),
+            }
+        )
+
+    return JSONResponse({"couriers": items})
+
+
+async def timeseries_orders(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    now = datetime.utcnow()
+    start = now - timedelta(minutes=60)
+
+    rows = await db.fetch(
+        """
+        SELECT date_trunc('minute', created_at) AS ts, COUNT(*) AS c
+        FROM orders
+        WHERE created_at >= $1
+        GROUP BY ts
+        ORDER BY ts ASC
+        """,
+        start,
+    )
+
+    points = []
+    for r in rows:
+        points.append({"ts": r["ts"].isoformat(), "value": int(r["c"])})
+
+    return JSONResponse({"series": points})
+
+
+async def on_startup():
+    await db.connect()
+
+
+async def on_shutdown():
+    await db.close()
+
+
+routes = [
+    Route("/health", health, methods=["GET"]),
+    Route("/kpi", kpi, methods=["GET"]),
+    Route("/orders/recent", orders_recent, methods=["GET"]),
+    Route("/couriers/load", couriers_load, methods=["GET"]),
+    Route("/timeseries/orders", timeseries_orders, methods=["GET"]),
+]
+
+app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=settings["port"])

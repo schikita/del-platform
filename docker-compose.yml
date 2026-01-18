@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: delivery_postgres
+    environment:
+      POSTGRES_DB: delivery_db
+      POSTGRES_USER: delivery_user
+      POSTGRES_PASSWORD: delivery_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: delivery_redis
+    ports:
+      - "6379:6379"
+
+  orders:
+    build: ./services/orders
+    container_name: delivery_orders
+    environment:
+      APP_NAME: orders
+      PORT: 8001
+      DATABASE_URL: postgres://delivery_user:delivery_pass@postgres:5432/delivery_db
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_TOKEN: super_secret_token
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - redis
+
+  couriers:
+    build: ./services/couriers
+    container_name: delivery_couriers
+    environment:
+      APP_NAME: couriers
+      PORT: 8002
+      DATABASE_URL: postgres://delivery_user:delivery_pass@postgres:5432/delivery_db
+      INTERNAL_TOKEN: super_secret_token
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres
+
+  dispatcher:
+    build: ./services/dispatcher
+    container_name: delivery_dispatcher
+    environment:
+      APP_NAME: dispatcher
+      PORT: 8003
+      DATABASE_URL: postgres://delivery_user:delivery_pass@postgres:5432/delivery_db
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_TOKEN: super_secret_token
+    ports:
+      - "8003:8003"
+    depends_on:
+      - postgres
+      - redis
+
+  analytics:
+    build: ./services/analytics
+    container_name: delivery_analytics
+    environment:
+      APP_NAME: analytics
+      PORT: 8004
+      DATABASE_URL: postgres://delivery_user:delivery_pass@postgres:5432/delivery_db
+      ORDERS_URL: http://orders:8001
+      COURIERS_URL: http://couriers:8002
+      INTERNAL_TOKEN: super_secret_token
+    ports:
+      - "8004:8004"
+    depends_on:
+      - postgres
+      - orders
+      - couriers
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: delivery_prometheus
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - orders
+      - couriers
+      - dispatcher
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: delivery_grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  dashboard:
+    build: ./web/dashboard
+    container_name: delivery_dashboard
+    environment:
+      NEXT_PUBLIC_ANALYTICS_URL: http://localhost:8004
+    ports:
+      - "3001:3000"
+    depends_on:
+      - analytics
+
+volumes:
+  pg_data:
