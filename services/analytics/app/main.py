@@ -1,5 +1,8 @@
+import random
+import time
 from datetime import datetime, timedelta
 
+import httpx
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -17,6 +20,8 @@ DASHBOARD_ORIGINS = {
     "http://localhost:13001",
 }
 
+http_client = None
+
 
 def _is_dashboard_origin(request):
     origin = request.headers.get("Origin")
@@ -29,13 +34,15 @@ def _is_internal_auth(request):
 
 
 def _auth_ok(request):
-    # Для демо: UI читает аналитику без internal-token, но только с разрешённого Origin.
-    # Внутренние сервисы продолжают ходить по X-Internal-Token.
     if _is_internal_auth(request):
         return True
     if _is_dashboard_origin(request):
         return True
     return False
+
+
+def _ui_only_ok(request):
+    return _is_dashboard_origin(request)
 
 
 async def health(request):
@@ -145,27 +152,113 @@ async def timeseries_orders(request):
     return JSONResponse({"series": points})
 
 
+def _rand_phone():
+    return "+37529" + "".join(str(random.randint(0, 9)) for _ in range(7))
+
+
+def _rand_customer():
+    first = ["Иван", "Павел", "Сергей", "Алексей", "Дмитрий", "Анна", "Мария", "Ольга"]
+    last = ["Иванов", "Петров", "Сидоров", "Козлов", "Кузнецов", "Смирнова", "Орлова"]
+    return f"{random.choice(first)} {random.choice(last)}"
+
+
+def _rand_address():
+    streets = ["Ленина", "Советская", "Победы", "Гагарина", "Купалы", "Независимости"]
+    return f"ул. {random.choice(streets)}, д. {random.randint(1, 120)}, кв. {random.randint(1, 200)}"
+
+
+def _rand_items():
+    items = [
+        {"sku": "pizza", "qty": 1},
+        {"sku": "cola", "qty": 2},
+        {"sku": "burger", "qty": 1},
+        {"sku": "fries", "qty": 1},
+    ]
+    k = random.randint(1, 3)
+    random.shuffle(items)
+    return items[:k]
+
+
+async def demo_create_order(request):
+    if not _ui_only_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    customer_name = (payload.get("customer_name") or "").strip() or _rand_customer()
+    address = (payload.get("address") or "").strip() or _rand_address()
+    phone = (payload.get("phone") or "").strip() or _rand_phone()
+    items = payload.get("items") or _rand_items()
+
+    headers = {"X-Internal-Token": settings["internal_token"]}
+    resp = await http_client.post(
+        f"{settings['orders_url'].rstrip('/')}/orders",
+        json={"customer_name": customer_name, "address": address, "phone": phone, "items": items},
+        headers=headers,
+        timeout=10.0,
+    )
+
+    return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
+async def demo_create_courier(request):
+    if not _ui_only_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        name = f"Courier #{random.randint(100, 999)}"
+
+    headers = {"X-Internal-Token": settings["internal_token"]}
+    resp = await http_client.post(
+        f"{settings['couriers_url'].rstrip('/')}/couriers",
+        json={"name": name},
+        headers=headers,
+        timeout=10.0,
+    )
+
+    return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
 async def on_startup():
+    global http_client
     await db.connect()
+    http_client = httpx.AsyncClient()
 
 
 async def on_shutdown():
+    global http_client
+    if http_client:
+        await http_client.aclose()
     await db.close()
+
 
 async def options_ok(request):
     return JSONResponse({}, status_code=204)
 
 
-
 routes = [
     Route("/{path:path}", options_ok, methods=["OPTIONS"]),
+
     Route("/health", health, methods=["GET"]),
     Route("/kpi", kpi, methods=["GET"]),
     Route("/orders/recent", orders_recent, methods=["GET"]),
     Route("/couriers/load", couriers_load, methods=["GET"]),
     Route("/timeseries/orders", timeseries_orders, methods=["GET"]),
-]
 
+    Route("/demo/orders", demo_create_order, methods=["POST"]),
+    Route("/demo/couriers", demo_create_courier, methods=["POST"]),
+]
 
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
 app.add_middleware(
@@ -178,5 +271,4 @@ app.add_middleware(
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=settings["port"])

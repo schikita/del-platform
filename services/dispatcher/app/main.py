@@ -47,22 +47,26 @@ async def _pick_best_courier():
     return row["id"]
 
 
-async def _assign_order(order_id, courier_id):
-    # Атомарность на уровне БД: назначаем только если заказ в NEW
+async def assign_order(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = await request.json()
+    order_id = (payload.get("order_id") or "").strip()
+    courier_id = (payload.get("courier_id") or "").strip()
+
+    if not order_id or not courier_id:
+        return JSONResponse({"detail": "order_id and courier_id required"}, status_code=400)
+
     updated = await db.execute(
         """
         UPDATE orders
-        SET status = 'ASSIGNED',
-            assigned_courier_id = $1::uuid,
-            updated_at = NOW()
-        WHERE id = $2::uuid AND status = 'NEW'
+        SET status = 'ASSIGNED', assigned_courier_id = $2
+        WHERE id = $1::uuid AND status = 'NEW'
         """,
-        courier_id,
         order_id,
+        courier_id,
     )
-
-    if "UPDATE 1" not in updated:
-        return False
 
     await db.execute(
         """
@@ -73,7 +77,7 @@ async def _assign_order(order_id, courier_id):
         courier_id,
     )
 
-    return True
+    return JSONResponse({"ok": True})
 
 
 async def dispatcher_loop():

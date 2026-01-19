@@ -5,6 +5,7 @@ import TopBar from "../components/TopBar";
 import KpiCards from "../components/KpiCards";
 import Charts from "../components/Charts";
 import OrdersTable from "../components/OrdersTable";
+import Controls from "../components/Controls";
 import { apiGet } from "../lib/api";
 
 export default function Page() {
@@ -43,7 +44,7 @@ export default function Page() {
     <div className="min-h-screen">
       <div className="max-w-7xl mx-auto px-6 pb-10">
         <TopBar />
-
+        <Controls onDone={load} />
         {error ? (
           <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 px-4 py-3 text-sm">
             {error}

@@ -14,6 +14,7 @@ from app.metrics import ORDERS_CREATED, HTTP_LATENCY, ACTIVE_ORDERS
 import redis.asyncio as redis
 
 
+
 settings = get_settings()
 db = Database(settings["database_url"])
 redis_client = None
@@ -168,6 +169,8 @@ async def on_shutdown():
     if redis_client:
         await redis_client.close()
     await db.close()
+
+
 
 
 routes = [
