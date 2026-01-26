@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 const SERVICE_MAP = {
   analytics: process.env.ANALYTICS_URL || "http://analytics:8004",
   orders: process.env.ORDERS_URL || "http://orders:8001",
@@ -11,9 +13,9 @@ function getTargetBase(service) {
   return SERVICE_MAP[service] || null;
 }
 
-async function handler(req, ctx) {
-  const service = ctx?.params?.service;
-  const pathParts = ctx?.params?.path || [];
+async function proxyHandler(req, { params }) {
+  const service = params?.service;
+  const pathParts = params?.path || [];
   const targetBase = getTargetBase(service);
 
   if (!targetBase) {
@@ -43,14 +45,19 @@ async function handler(req, ctx) {
 
   const resp = await fetch(upstreamUrl.toString(), init);
 
-  // отдаём тело как есть
   const outHeaders = new Headers(resp.headers);
+
+  // Иногда upstream может отдавать hop-by-hop заголовки
+  outHeaders.delete("connection");
+  outHeaders.delete("keep-alive");
+  outHeaders.delete("transfer-encoding");
+
   return new NextResponse(resp.body, { status: resp.status, headers: outHeaders });
 }
 
-export const GET = handler;
-export const POST = handler;
-export const PUT = handler;
-export const PATCH = handler;
-export const DELETE = handler;
-export const OPTIONS = handler;
+export const GET = proxyHandler;
+export const POST = proxyHandler;
+export const PUT = proxyHandler;
+export const PATCH = proxyHandler;
+export const DELETE = proxyHandler;
+export const OPTIONS = proxyHandler;

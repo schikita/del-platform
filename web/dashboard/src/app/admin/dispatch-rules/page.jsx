@@ -4,7 +4,7 @@ export default function DispatchRulesPage() {
       <div className="text-sm font-medium text-white/80">Dispatch rules</div>
       <div className="mt-3 text-sm text-white/60">
         Здесь будет настройка правил назначения (например: “наименьшая загрузка”, “по зонам”, “по приоритету”, SLA).
-        Сейчас используется ручное назначение на странице Orders.
+        Сейчас используется ручное назначение на странице Orders (и кнопка “Лучший”).
       </div>
     </div>
   );
