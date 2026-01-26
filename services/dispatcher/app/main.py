@@ -5,6 +5,9 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from starlette.responses import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
 from app.config import get_settings
 from app.db import Database
 
@@ -31,6 +34,10 @@ def _auth_ok(request):
 async def health(request):
     return JSONResponse({"status": "ok", "service": settings["app_name"]})
 
+
+async def metrics(request):
+    data = generate_latest()
+    return Response(data, media_type=CONTENT_TYPE_LATEST)
 
 async def _ensure_group():
     try:
@@ -179,6 +186,7 @@ async def on_shutdown():
 
 routes = [
     Route("/health", health, methods=["GET"]),
+    Route("/metrics", metrics, methods=["GET"]),
     Route("/dispatch/assign", assign_order, methods=["POST"]),
 ]
 
