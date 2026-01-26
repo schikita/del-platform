@@ -1,99 +1,56 @@
-export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 
-const SERVICE_ENV_MAP = {
-  analytics: "ANALYTICS_URL",
-  orders: "ORDERS_URL",
-  couriers: "COURIERS_URL",
-  dispatcher: "DISPATCHER_URL",
+const SERVICE_MAP = {
+  analytics: process.env.ANALYTICS_URL || "http://analytics:8004",
+  orders: process.env.ORDERS_URL || "http://orders:8001",
+  couriers: process.env.COURIERS_URL || "http://couriers:8002",
+  dispatcher: process.env.DISPATCHER_URL || "http://dispatcher:8003",
 };
 
-function getBaseUrl(service) {
-  const envName = SERVICE_ENV_MAP[service];
-  if (!envName) return null;
-  return process.env[envName] || null;
+function getTargetBase(service) {
+  return SERVICE_MAP[service] || null;
 }
 
-function buildTargetUrl(baseUrl, pathParts, searchParams) {
-  const base = baseUrl.replace(/\/+$/, "");
-  const path = (pathParts || []).join("/");
-  const url = new URL(`${base}/${path}`);
+async function handler(req, ctx) {
+  const service = ctx?.params?.service;
+  const pathParts = ctx?.params?.path || [];
+  const targetBase = getTargetBase(service);
 
-  for (const [k, v] of searchParams.entries()) {
-    url.searchParams.append(k, v);
-  }
-  return url.toString();
-}
-
-async function forward(req, ctx) {
-  const { service, path } = await ctx.params;
-
-  const baseUrl = getBaseUrl(service);
-  if (!baseUrl) {
-    return new Response(JSON.stringify({ detail: `Unknown service: ${service}` }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (!targetBase) {
+    return NextResponse.json({ detail: `Unknown service: ${service}` }, { status: 400 });
   }
 
-  const internalToken = process.env.INTERNAL_TOKEN || "";
-  if (!internalToken) {
-    return new Response(JSON.stringify({ detail: "INTERNAL_TOKEN is not set" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const upstreamUrl = new URL(pathParts.join("/"), targetBase);
+  const srcUrl = new URL(req.url);
 
-  const reqUrl = new URL(req.url);
-  const targetUrl = buildTargetUrl(baseUrl, path, reqUrl.searchParams);
+  // пробрасываем query-string
+  srcUrl.searchParams.forEach((v, k) => upstreamUrl.searchParams.set(k, v));
 
   const headers = new Headers(req.headers);
-  headers.set("X-Internal-Token", internalToken);
-
-  // Важно: нельзя прокидывать Host, иначе некоторые апстримы ломаются
+  headers.set("X-Internal-Token", process.env.INTERNAL_TOKEN || "");
   headers.delete("host");
 
-  const method = req.method.toUpperCase();
-  const hasBody = !["GET", "HEAD"].includes(method);
+  const init = {
+    method: req.method,
+    headers,
+    cache: "no-store",
+  };
 
-  let body = null;
-  if (hasBody) {
-    body = await req.arrayBuffer();
+  // тело только если метод не GET/HEAD
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    init.body = await req.arrayBuffer();
   }
 
-  const upstream = await fetch(targetUrl, {
-    method,
-    headers,
-    body,
-    redirect: "manual",
-    cache: "no-store",
-  });
+  const resp = await fetch(upstreamUrl.toString(), init);
 
-  const respHeaders = new Headers(upstream.headers);
-
-  // На всякий случай: чтобы браузер не кешировал
-  respHeaders.set("Cache-Control", "no-store");
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: respHeaders,
-  });
+  // отдаём тело как есть
+  const outHeaders = new Headers(resp.headers);
+  return new NextResponse(resp.body, { status: resp.status, headers: outHeaders });
 }
 
-export async function GET(req, ctx) {
-  return forward(req, ctx);
-}
-export async function POST(req, ctx) {
-  return forward(req, ctx);
-}
-export async function PATCH(req, ctx) {
-  return forward(req, ctx);
-}
-export async function PUT(req, ctx) {
-  return forward(req, ctx);
-}
-export async function DELETE(req, ctx) {
-  return forward(req, ctx);
-}
-export async function OPTIONS(req, ctx) {
-  return forward(req, ctx);
-}
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const PATCH = handler;
+export const DELETE = handler;
+export const OPTIONS = handler;

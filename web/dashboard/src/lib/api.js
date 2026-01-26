@@ -1,30 +1,58 @@
-const BASE = "/api/proxy";
+const DEFAULT_SERVICE = "analytics";
 
-async function readErrorText(res) {
-  try {
-    const txt = await res.text();
-    return txt || `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
+function normalizePath(path) {
+  if (!path) return "/";
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function buildProxyUrl(service, path) {
+  const svc = (service || DEFAULT_SERVICE).trim();
+  const p = normalizePath(path);
+
+  if (!svc) throw new Error("Service is empty");
+  return `/api/proxy/${encodeURIComponent(svc)}${p}`;
+}
+
+async function readError(res) {
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    const data = await res.json().catch(() => null);
+    if (data && typeof data === "object") return JSON.stringify(data);
   }
+  return await res.text().catch(() => "");
 }
 
-export async function apiGet(service, path) {
-  const res = await fetch(`/api/proxy/${service}${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(await readErrorText(res));
-  return await res.json();
-}
+export async function proxyGet(service, path) {
+  const url = buildProxyUrl(service, path);
 
-export async function apiSend(service, path, method, payload) {
-  const res = await fetch(`/api/proxy/${service}${path}`, {
-    method,
+  const res = await fetch(url, {
+    method: "GET",
     headers: { "Content-Type": "application/json" },
-    body: payload ? JSON.stringify(payload) : null,
     cache: "no-store",
   });
 
-  if (!res.ok) throw new Error(await readErrorText(res));
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return await res.json();
-  return await res.text();
+  if (!res.ok) {
+    const txt = await readError(res);
+    throw new Error(txt || `Request failed: ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+export async function proxyPost(service, path, payload) {
+  const url = buildProxyUrl(service, path);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const txt = await readError(res);
+    throw new Error(txt || `Request failed: ${res.status}`);
+  }
+
+  return await res.json();
 }
