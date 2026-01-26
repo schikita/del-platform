@@ -9,23 +9,37 @@ const SERVICE_MAP = {
   dispatcher: process.env.DISPATCHER_URL || "http://dispatcher:8003",
 };
 
-function getTargetBase(service) {
-  return SERVICE_MAP[service] || null;
+function resolveTarget(parts) {
+  const safeParts = Array.isArray(parts) ? parts.filter(Boolean) : [];
+
+  if (!safeParts.length) {
+    return { service: "analytics", rest: [] };
+  }
+
+  const first = safeParts[0];
+
+  // формат: /api/proxy/analytics/kpi
+  if (SERVICE_MAP[first]) {
+    return { service: first, rest: safeParts.slice(1) };
+  }
+
+  // fallback: /api/proxy/kpi => analytics/kpi
+  return { service: "analytics", rest: safeParts };
 }
 
-async function proxyHandler(req, { params }) {
-  const service = params?.service;
-  const pathParts = params?.path || [];
-  const targetBase = getTargetBase(service);
+async function handler(req, { params }) {
+  const parts = params?.path || [];
+  const { service, rest } = resolveTarget(parts);
 
+  const targetBase = SERVICE_MAP[service];
   if (!targetBase) {
     return NextResponse.json({ detail: `Unknown service: ${service}` }, { status: 400 });
   }
 
-  const upstreamUrl = new URL(pathParts.join("/"), targetBase);
+  const upstreamUrl = new URL(rest.join("/"), targetBase);
   const srcUrl = new URL(req.url);
 
-  // пробрасываем query-string
+  // query-string
   srcUrl.searchParams.forEach((v, k) => upstreamUrl.searchParams.set(k, v));
 
   const headers = new Headers(req.headers);
@@ -38,7 +52,6 @@ async function proxyHandler(req, { params }) {
     cache: "no-store",
   };
 
-  // тело только если метод не GET/HEAD
   if (req.method !== "GET" && req.method !== "HEAD") {
     init.body = await req.arrayBuffer();
   }
@@ -46,8 +59,6 @@ async function proxyHandler(req, { params }) {
   const resp = await fetch(upstreamUrl.toString(), init);
 
   const outHeaders = new Headers(resp.headers);
-
-  // Иногда upstream может отдавать hop-by-hop заголовки
   outHeaders.delete("connection");
   outHeaders.delete("keep-alive");
   outHeaders.delete("transfer-encoding");
@@ -55,9 +66,9 @@ async function proxyHandler(req, { params }) {
   return new NextResponse(resp.body, { status: resp.status, headers: outHeaders });
 }
 
-export const GET = proxyHandler;
-export const POST = proxyHandler;
-export const PUT = proxyHandler;
-export const PATCH = proxyHandler;
-export const DELETE = proxyHandler;
-export const OPTIONS = proxyHandler;
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const PATCH = handler;
+export const DELETE = handler;
+export const OPTIONS = handler;
