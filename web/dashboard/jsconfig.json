@@ -1,6 +1,3 @@
-cd ~/del-plat/del-platform/web/dashboard
-
-cat > jsconfig.json <<'JSON'
 {
   "compilerOptions": {
     "baseUrl": ".",
@@ -9,4 +6,4 @@ cat > jsconfig.json <<'JSON'
     }
   }
 }
-JSON
+
