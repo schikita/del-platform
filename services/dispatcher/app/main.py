@@ -184,10 +184,135 @@ async def on_shutdown():
     await db.close()
 
 
+async def _start_order(order_id):
+    updated = await db.fetchrow(
+        """
+        UPDATE orders
+        SET status = 'IN_PROGRESS'
+        WHERE id = $1::uuid AND status = 'ASSIGNED'
+        RETURNING id::text AS id
+        """,
+        order_id,
+    )
+    return bool(updated)
+
+
+async def _complete_order(order_id):
+    row = await db.fetchrow(
+        """
+        WITH order_upd AS (
+            UPDATE orders
+            SET status = 'DELIVERED'
+            WHERE id = $1::uuid AND status = 'IN_PROGRESS'
+            RETURNING assigned_courier_id
+        ),
+        courier_upd AS (
+            UPDATE couriers
+            SET current_load = GREATEST(current_load - 1, 0)
+            WHERE id = (SELECT assigned_courier_id FROM order_upd)
+            RETURNING id
+        )
+        SELECT
+            (SELECT assigned_courier_id FROM order_upd) AS courier_id,
+            (SELECT id FROM courier_upd) AS updated_courier_id
+        """,
+        order_id,
+    )
+
+    if not row:
+        return False
+
+    return True
+
+
+async def _cancel_order(order_id):
+    row = await db.fetchrow(
+        """
+        WITH order_upd AS (
+            UPDATE orders
+            SET status = 'CANCELLED'
+            WHERE id = $1::uuid AND status IN ('NEW', 'ASSIGNED', 'IN_PROGRESS')
+            RETURNING status AS prev_status, assigned_courier_id
+        ),
+        courier_upd AS (
+            UPDATE couriers
+            SET current_load = GREATEST(current_load - 1, 0)
+            WHERE id = (SELECT assigned_courier_id FROM order_upd)
+              AND (SELECT prev_status FROM order_upd) IN ('ASSIGNED', 'IN_PROGRESS')
+            RETURNING id
+        )
+        SELECT
+            (SELECT prev_status FROM order_upd) AS prev_status,
+            (SELECT assigned_courier_id FROM order_upd) AS courier_id
+        """,
+        order_id,
+    )
+
+    if not row:
+        return False
+
+    return True
+
+
+async def start_order(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = await request.json()
+    order_id = (payload.get("order_id") or "").strip()
+
+    if not order_id:
+        return JSONResponse({"detail": "order_id required"}, status_code=400)
+
+    ok = await _start_order(order_id)
+    if not ok:
+        return JSONResponse({"detail": "Order must be ASSIGNED"}, status_code=409)
+
+    return JSONResponse({"ok": True})
+
+
+async def complete_order(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = await request.json()
+    order_id = (payload.get("order_id") or "").strip()
+
+    if not order_id:
+        return JSONResponse({"detail": "order_id required"}, status_code=400)
+
+    ok = await _complete_order(order_id)
+    if not ok:
+        return JSONResponse({"detail": "Order must be IN_PROGRESS"}, status_code=409)
+
+    return JSONResponse({"ok": True})
+
+
+async def cancel_order(request):
+    if not _auth_ok(request):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    payload = await request.json()
+    order_id = (payload.get("order_id") or "").strip()
+
+    if not order_id:
+        return JSONResponse({"detail": "order_id required"}, status_code=400)
+
+    ok = await _cancel_order(order_id)
+    if not ok:
+        return JSONResponse({"detail": "Order not cancellable"}, status_code=409)
+
+    return JSONResponse({"ok": True})
+
+
+
 routes = [
     Route("/health", health, methods=["GET"]),
     Route("/metrics", metrics, methods=["GET"]),
     Route("/dispatch/assign", assign_order, methods=["POST"]),
+    Route("/dispatch/start", start_order, methods=["POST"]),
+    Route("/dispatch/complete", complete_order, methods=["POST"]),
+    Route("/dispatch/cancel", cancel_order, methods=["POST"]),
 ]
 
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
