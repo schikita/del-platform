@@ -40,7 +40,54 @@ function StatusBadge({ status }) {
 
   const cls = map[status] || "bg-white/10 text-white/70";
 
-  return <span className={`rounded-lg px-2 py-1 text-xs ${cls}`}>{status}</span>;
+  return (
+    <span className={`rounded-lg px-2 py-1 text-xs ${cls}`}>{status}</span>
+  );
+}
+
+async function start(orderId) {
+  setErr("");
+  setLoading(true);
+  try {
+    await apiSend("dispatcher", "/dispatch/start", "POST", {
+      order_id: orderId,
+    });
+    await loadAll();
+  } catch (e) {
+    setErr(e && e.message ? e.message : "Start failed");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function complete(orderId) {
+  setErr("");
+  setLoading(true);
+  try {
+    await apiSend("dispatcher", "/dispatch/complete", "POST", {
+      order_id: orderId,
+    });
+    await loadAll();
+  } catch (e) {
+    setErr(e && e.message ? e.message : "Complete failed");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function cancel(orderId) {
+  setErr("");
+  setLoading(true);
+  try {
+    await apiSend("dispatcher", "/dispatch/cancel", "POST", {
+      order_id: orderId,
+    });
+    await loadAll();
+  } catch (e) {
+    setErr(e && e.message ? e.message : "Cancel failed");
+  } finally {
+    setLoading(false);
+  }
 }
 
 export default function AdminOrdersPage() {
@@ -57,7 +104,10 @@ export default function AdminOrdersPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
-  const activeCouriers = useMemo(() => couriers.filter((c) => c.is_active), [couriers]);
+  const activeCouriers = useMemo(
+    () => couriers.filter((c) => c.is_active),
+    [couriers],
+  );
 
   const courierById = useMemo(() => {
     const m = new Map();
@@ -73,14 +123,22 @@ export default function AdminOrdersPage() {
         if (statusFilter !== "ALL" && o.status !== statusFilter) return false;
         if (!text) return true;
 
-        const blob = `${o.customer_name || ""} ${o.address || ""} ${o.phone || ""}`.toLowerCase();
+        const blob =
+          `${o.customer_name || ""} ${o.address || ""} ${o.phone || ""}`.toLowerCase();
         return blob.includes(text);
       })
       .slice(0, 200);
   }, [orders, q, statusFilter]);
 
   const counters = useMemo(() => {
-    const res = { all: 0, NEW: 0, ASSIGNED: 0, IN_PROGRESS: 0, DELIVERED: 0, CANCELLED: 0 };
+    const res = {
+      all: 0,
+      NEW: 0,
+      ASSIGNED: 0,
+      IN_PROGRESS: 0,
+      DELIVERED: 0,
+      CANCELLED: 0,
+    };
     (orders || []).forEach((o) => {
       res.all += 1;
       if (res[o.status] !== undefined) res[o.status] += 1;
@@ -148,7 +206,9 @@ export default function AdminOrdersPage() {
 
   function pickBestCourierId() {
     if (!activeCouriers.length) return "";
-    const sorted = [...activeCouriers].sort((a, b) => (a.current_load || 0) - (b.current_load || 0));
+    const sorted = [...activeCouriers].sort(
+      (a, b) => (a.current_load || 0) - (b.current_load || 0),
+    );
     return sorted[0]?.id || "";
   }
 
@@ -170,20 +230,41 @@ export default function AdminOrdersPage() {
         <div className="col-span-12 lg:col-span-4">
           <Card title="Создать заказ">
             <div className="space-y-3">
-              <Field label="Клиент" value={customerName} onChange={setCustomerName} placeholder="Иван Иванов" />
-              <Field label="Адрес" value={address} onChange={setAddress} placeholder="ул. Ленина, 10" />
-              <Field label="Телефон" value={phone} onChange={setPhone} placeholder="+375291234567" />
+              <Field
+                label="Клиент"
+                value={customerName}
+                onChange={setCustomerName}
+                placeholder="Иван Иванов"
+              />
+              <Field
+                label="Адрес"
+                value={address}
+                onChange={setAddress}
+                placeholder="ул. Ленина, 10"
+              />
+              <Field
+                label="Телефон"
+                value={phone}
+                onChange={setPhone}
+                placeholder="+375291234567"
+              />
 
               <button
                 className="mt-2 w-full rounded-xl bg-white/10 px-4 py-2 text-sm hover:bg-white/15 disabled:opacity-50"
-                disabled={busy || !customerName.trim() || !address.trim() || !phone.trim()}
+                disabled={
+                  busy ||
+                  !customerName.trim() ||
+                  !address.trim() ||
+                  !phone.trim()
+                }
                 onClick={createOrder}
               >
                 Создать
               </button>
 
               <div className="text-xs text-white/50">
-                Заказ создаётся со статусом <span className="text-white/70">NEW</span>.
+                Заказ создаётся со статусом{" "}
+                <span className="text-white/70">NEW</span>.
               </div>
             </div>
           </Card>
@@ -221,15 +302,24 @@ export default function AdminOrdersPage() {
                   >
                     <option value="ALL">Все ({counters.all})</option>
                     <option value="NEW">NEW ({counters.NEW})</option>
-                    <option value="ASSIGNED">ASSIGNED ({counters.ASSIGNED})</option>
-                    <option value="IN_PROGRESS">IN_PROGRESS ({counters.IN_PROGRESS})</option>
-                    <option value="DELIVERED">DELIVERED ({counters.DELIVERED})</option>
-                    <option value="CANCELLED">CANCELLED ({counters.CANCELLED})</option>
+                    <option value="ASSIGNED">
+                      ASSIGNED ({counters.ASSIGNED})
+                    </option>
+                    <option value="IN_PROGRESS">
+                      IN_PROGRESS ({counters.IN_PROGRESS})
+                    </option>
+                    <option value="DELIVERED">
+                      DELIVERED ({counters.DELIVERED})
+                    </option>
+                    <option value="CANCELLED">
+                      CANCELLED ({counters.CANCELLED})
+                    </option>
                   </select>
                 </label>
 
                 <div className="text-xs text-white/50">
-                  Активных курьеров: <span className="text-white/70">{activeCouriers.length}</span>
+                  Активных курьеров:{" "}
+                  <span className="text-white/70">{activeCouriers.length}</span>
                 </div>
               </div>
             </Card>
@@ -253,7 +343,9 @@ export default function AdminOrdersPage() {
 
                 <tbody>
                   {filteredOrders.map((o) => {
-                    const courier = o.assigned_courier_id ? courierById.get(o.assigned_courier_id) : null;
+                    const courier = o.assigned_courier_id
+                      ? courierById.get(o.assigned_courier_id)
+                      : null;
 
                     return (
                       <tr key={o.id} className="border-b border-white/5">
@@ -263,19 +355,13 @@ export default function AdminOrdersPage() {
                         <td className="py-2">
                           <StatusBadge status={o.status} />
                         </td>
-                        <td className="py-2 text-white/70">{courier ? courier.name : "—"}</td>
+                        <td className="py-2 text-white/70">
+                          {courier ? courier.name : "—"}
+                        </td>
 
                         <td className="py-2 text-right">
                           {o.status === "NEW" ? (
                             <div className="flex justify-end gap-2">
-                              <button
-                                className="rounded-xl bg-white/10 px-3 py-2 text-xs hover:bg-white/15 disabled:opacity-50"
-                                disabled={busy || activeCouriers.length === 0}
-                                onClick={() => assignBest(o.id)}
-                              >
-                                Лучший
-                              </button>
-
                               <select
                                 className="rounded-xl bg-black/30 px-3 py-2 text-xs ring-1 ring-white/10"
                                 defaultValue=""
@@ -285,10 +371,12 @@ export default function AdminOrdersPage() {
                                   assign(o.id, v);
                                   e.target.value = "";
                                 }}
-                                disabled={busy || activeCouriers.length === 0}
+                                disabled={
+                                  loading || activeCouriers.length === 0
+                                }
                               >
                                 <option value="" disabled>
-                                  Выбрать курьера
+                                  Назначить курьера
                                 </option>
                                 {activeCouriers.map((c) => (
                                   <option key={c.id} value={c.id}>
@@ -296,10 +384,60 @@ export default function AdminOrdersPage() {
                                   </option>
                                 ))}
                               </select>
+
+                              <button
+                                className="rounded-xl bg-white/10 px-4 py-2 text-xs hover:bg-white/15 disabled:opacity-50"
+                                disabled={loading}
+                                onClick={() => cancel(o.id)}
+                              >
+                                Отменить
+                              </button>
                             </div>
-                          ) : (
+                          ) : null}
+
+                          {o.status === "ASSIGNED" ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className="rounded-xl bg-white/10 px-4 py-2 text-xs hover:bg-white/15 disabled:opacity-50"
+                                disabled={loading}
+                                onClick={() => start(o.id)}
+                              >
+                                В работу
+                              </button>
+
+                              <button
+                                className="rounded-xl bg-white/10 px-4 py-2 text-xs hover:bg-white/15 disabled:opacity-50"
+                                disabled={loading}
+                                onClick={() => cancel(o.id)}
+                              >
+                                Отменить
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {o.status === "IN_PROGRESS" ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className="rounded-xl bg-emerald-500/20 px-4 py-2 text-xs hover:bg-emerald-500/30 disabled:opacity-50"
+                                disabled={loading}
+                                onClick={() => complete(o.id)}
+                              >
+                                Доставлен
+                              </button>
+
+                              <button
+                                className="rounded-xl bg-white/10 px-4 py-2 text-xs hover:bg-white/15 disabled:opacity-50"
+                                disabled={loading}
+                                onClick={() => cancel(o.id)}
+                              >
+                                Отменить
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {["DELIVERED", "CANCELLED"].includes(o.status) ? (
                             <span className="text-xs text-white/40">—</span>
-                          )}
+                          ) : null}
                         </td>
                       </tr>
                     );
@@ -307,7 +445,10 @@ export default function AdminOrdersPage() {
 
                   {filteredOrders.length === 0 ? (
                     <tr>
-                      <td className="py-6 text-center text-white/50" colSpan={6}>
+                      <td
+                        className="py-6 text-center text-white/50"
+                        colSpan={6}
+                      >
                         Заказов нет (или фильтр ничего не нашёл).
                       </td>
                     </tr>
@@ -317,7 +458,8 @@ export default function AdminOrdersPage() {
             </div>
 
             <div className="mt-4 text-xs text-white/45">
-              Примечание: “Лучший” = активный курьер с минимальной текущей нагрузкой.
+              Примечание: “Лучший” = активный курьер с минимальной текущей
+              нагрузкой.
             </div>
           </Card>
         </div>
