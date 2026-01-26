@@ -1,13 +1,12 @@
 import asyncio
-import time
+
+import redis.asyncio as redis
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from app.config import get_settings
 from app.db import Database
-
-import redis.asyncio as redis
 
 
 settings = get_settings()
@@ -19,12 +18,21 @@ GROUP_NAME = "dispatcher-group"
 CONSUMER_NAME = "dispatcher-1"
 
 
+def _auth_ok(request):
+    expected = settings.get("internal_token") or settings.get("INTERNAL_TOKEN") or ""
+    got = request.headers.get("X-Internal-Token") or ""
+
+    if not expected:
+        return True
+
+    return got == expected
+
+
 async def health(request):
     return JSONResponse({"status": "ok", "service": settings["app_name"]})
 
 
 async def _ensure_group():
-    # Создаём группу, если её ещё нет (идемпотентно)
     try:
         await redis_client.xgroup_create(STREAM_NAME, GROUP_NAME, id="0-0", mkstream=True)
     except Exception:
@@ -32,10 +40,9 @@ async def _ensure_group():
 
 
 async def _pick_best_courier():
-    # Выбираем активного курьера с минимальной текущей нагрузкой
     row = await db.fetchrow(
         """
-        SELECT id::text, current_load
+        SELECT id::text AS id, current_load
         FROM couriers
         WHERE is_active = TRUE
         ORDER BY current_load ASC, created_at ASC
@@ -45,6 +52,45 @@ async def _pick_best_courier():
     if not row:
         return None
     return row["id"]
+
+
+async def _assign_order(order_id, courier_id):
+    row = await db.fetchrow(
+        """
+        WITH courier_ok AS (
+            SELECT id
+            FROM couriers
+            WHERE id = $2::uuid AND is_active = TRUE
+            FOR UPDATE
+        ),
+        order_upd AS (
+            UPDATE orders
+            SET status = 'ASSIGNED',
+                assigned_courier_id = $2::uuid
+            WHERE id = $1::uuid
+              AND status = 'NEW'
+              AND EXISTS (SELECT 1 FROM courier_ok)
+            RETURNING id
+        ),
+        courier_upd AS (
+            UPDATE couriers
+            SET current_load = current_load + 1
+            WHERE id = $2::uuid
+              AND EXISTS (SELECT 1 FROM order_upd)
+            RETURNING id
+        )
+        SELECT
+            (SELECT id FROM order_upd) AS order_id,
+            (SELECT id FROM courier_upd) AS courier_id
+        """,
+        order_id,
+        courier_id,
+    )
+
+    if not row:
+        return False
+
+    return bool(row["order_id"] and row["courier_id"])
 
 
 async def assign_order(request):
@@ -58,24 +104,27 @@ async def assign_order(request):
     if not order_id or not courier_id:
         return JSONResponse({"detail": "order_id and courier_id required"}, status_code=400)
 
-    updated = await db.execute(
-        """
-        UPDATE orders
-        SET status = 'ASSIGNED', assigned_courier_id = $2
-        WHERE id = $1::uuid AND status = 'NEW'
-        """,
-        order_id,
+    courier = await db.fetchrow(
+        "SELECT id::text AS id, is_active FROM couriers WHERE id = $1::uuid",
         courier_id,
     )
+    if not courier:
+        return JSONResponse({"detail": "Courier not found"}, status_code=404)
+    if courier["is_active"] is False:
+        return JSONResponse({"detail": "Courier is inactive"}, status_code=409)
 
-    await db.execute(
-        """
-        UPDATE couriers
-        SET current_load = current_load + 1
-        WHERE id = $1::uuid
-        """,
-        courier_id,
+    order = await db.fetchrow(
+        "SELECT id::text AS id, status FROM orders WHERE id = $1::uuid",
+        order_id,
     )
+    if not order:
+        return JSONResponse({"detail": "Order not found"}, status_code=404)
+    if order["status"] != "NEW":
+        return JSONResponse({"detail": f"Order must be NEW, got {order['status']}"}, status_code=409)
+
+    ok = await _assign_order(order_id, courier_id)
+    if not ok:
+        return JSONResponse({"detail": "Assign failed"}, status_code=409)
 
     return JSONResponse({"ok": True})
 
@@ -105,7 +154,6 @@ async def dispatcher_loop():
 
                     courier_id = await _pick_best_courier()
                     if not courier_id:
-                        # Если нет активных курьеров — оставляем сообщение висеть (переобработаем позже)
                         continue
 
                     ok = await _assign_order(order_id, courier_id)
@@ -113,7 +161,6 @@ async def dispatcher_loop():
                         await redis_client.xack(STREAM_NAME, GROUP_NAME, msg_id)
 
         except Exception:
-            # Если Redis/DB кратковременно отвалились — не падаем, продолжаем
             await asyncio.sleep(1.0)
 
 
@@ -132,6 +179,7 @@ async def on_shutdown():
 
 routes = [
     Route("/health", health, methods=["GET"]),
+    Route("/dispatch/assign", assign_order, methods=["POST"]),
 ]
 
 app = Starlette(routes=routes, on_startup=[on_startup], on_shutdown=[on_shutdown])
