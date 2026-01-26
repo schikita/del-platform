@@ -136,7 +136,7 @@ services:
       - "13001:3000"
     depends_on:
       - analytics
-       orders
+      - orders
       - couriers
       - dispatcher
 
