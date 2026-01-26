@@ -4,9 +4,12 @@ import { motion, AnimatePresence } from "framer-motion";
 
 function StatusBadge({ status }) {
   const map = {
-    NEW: "bg-amber-500/20 text-amber-200 border-amber-500/30",
-    ASSIGNED: "bg-emerald-500/20 text-emerald-200 border-emerald-500/30"
-  };
+  NEW: "bg-amber-500/20 text-amber-200 border-amber-500/30",
+  ASSIGNED: "bg-emerald-500/20 text-emerald-200 border-emerald-500/30",
+  IN_PROGRESS: "bg-sky-500/20 text-sky-200 border-sky-500/30",
+  DELIVERED: "bg-violet-500/20 text-violet-200 border-violet-500/30",
+  CANCELLED: "bg-red-500/20 text-red-200 border-red-500/30",
+};
 
   const cls = map[status] || "bg-zinc-500/20 text-zinc-200 border-zinc-500/30";
 
