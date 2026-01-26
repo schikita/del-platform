@@ -1,0 +1,12 @@
+cd ~/del-plat/del-platform/web/dashboard
+
+cat > jsconfig.json <<'JSON'
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}
+JSON

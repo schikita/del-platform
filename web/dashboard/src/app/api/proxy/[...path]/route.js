@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 const SERVICE_ENV_MAP = {
   analytics: "ANALYTICS_URL",
   orders: "ORDERS_URL",

@@ -1,3 +1,5 @@
+const BASE = "/api/proxy";
+
 async function readErrorText(res) {
   try {
     const txt = await res.text();
